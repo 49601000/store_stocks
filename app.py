@@ -117,16 +117,23 @@ tabs = st.tabs(["🔍 検索・更新", "🔄 店間移動", "📊 ダッシュ�
 with tabs[0]:
     st.subheader("在庫検索 & フラグ更新")
 
-    col_a, col_b, col_c = st.columns([1, 2, 2])
+    col_a, col_b, col_c, col_d = st.columns([1, 2, 2, 1])
     with col_a:
         search_id = st.text_input("ID 検索", placeholder="例: 1234")
     with col_b:
         search_model = st.text_input("モデル名", placeholder="例: Ray-Ban RX5368")
     with col_c:
         search_color = st.text_input("カラー", placeholder="例: マットブラック")
+    with col_d:
+        show_all = st.toggle("売済も表示", value=False)
 
     # フィルタリング
     result = df.copy()
+
+    # ★ デフォルトは在庫あり（空白）のみ
+    if not show_all:
+        result = result[result["売上フラグ"].fillna("").astype(str).str.strip() == ""]
+
     if search_id.strip():
         result = result[result["ID"].astype(str).str.contains(search_id.strip(), case=False, na=False)]
     if search_model.strip():
@@ -134,7 +141,12 @@ with tabs[0]:
     if search_color.strip():
         result = result[result["カラー"].astype(str).str.contains(search_color.strip(), case=False, na=False)]
 
-    st.caption(f"該当件数: {len(result)} 件")
+    # 件数表示
+    total_stock = len(df[df["売上フラグ"].fillna("").astype(str).str.strip() == ""])
+    if show_all:
+        st.caption(f"表示中: 全件 {len(result)} 件（うち在庫あり {total_stock} 件）")
+    else:
+        st.caption(f"在庫あり: {len(result)} 件 ／ 総データ {len(df)} 件　※売済・スタッフ用等は非表示")
 
     if len(result) > 200:
         st.warning("件数が多いため、最初の 200 件を表示します。検索条件を絞ってください。")
