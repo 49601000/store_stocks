@@ -64,5 +64,5 @@ st.divider()
 col_f1, col_f2 = st.columns([3, 1])
 col_f1.caption("マトイ・ニコメ 在庫管理システム v2.1 | Powered by Streamlit + Google Sheets")
 if col_f2.button("🔄 データを再読み込み"):
-    st.cache_data.clear()
+    data.force_reload()
     st.rerun()
