@@ -21,11 +21,11 @@ from modules.settings import get_allowed_brands, get_fav_brands
 # ─────────────────────────────────────────────
 FLAG_OPTIONS = ["", "〇", "△", "▲", "×"]
 FLAG_LABELS_DISPLAY = {
-    "":  "― 在庫あり",
-    "〇": "〇 売上済み",
-    "△": "△ スタッフ用",
-    "▲": "▲ 返品",
-    "×": "× 破棄",
+    "":  "在庫有",
+    "〇": "〇売上済",
+    "△": "△スタッフ",
+    "▲": "▲返品",
+    "×": "×除外",
 }
 
 # フラグ → 行背景色（薄い網掛け）
@@ -51,6 +51,20 @@ _CSS = """
 
 /* ヘッダーラベル */
 .col-label { font-size:0.75rem; color:#666; margin-bottom:1px; font-weight:600; }
+
+/* テーブル行のフォントを小さく */
+div[data-testid="stHorizontalBlock"] p,
+div[data-testid="stHorizontalBlock"] div[data-testid="stText"] {
+    font-size: 0.78rem !important;
+    line-height: 1.3 !important;
+}
+/* selectbox のフォントも小さく */
+div[data-testid="stHorizontalBlock"] div[data-baseweb="select"] {
+    font-size: 0.78rem !important;
+}
+div[data-testid="stHorizontalBlock"] input {
+    font-size: 0.78rem !important;
+}
 </style>
 """
 
@@ -147,8 +161,8 @@ def render(df: pd.DataFrame):
     st.divider()
 
     # ── ヘッダー行 ───────────────────────────
-    # 列幅: ⭐ | ID | ブランド | モデル | カラー | 店舗 | 下代 | 上代 | フラグ▼ | 年▼ | 月▼ | メモ
-    COL_W = [0.4, 0.7, 1.4, 2.2, 1.4, 0.7, 0.9, 1.0, 1.2, 0.7, 0.7, 1.8]
+    # 列幅: ⭐ | ID | ブランド | モデル | カラー(狭) | 店舗 | 下代 | 上代 | フラグ▼(広) | 年▼(広) | 月▼ | メモ
+    COL_W = [0.35, 0.6, 1.3, 2.0, 1.0, 0.65, 0.85, 0.95, 1.4, 0.9, 0.65, 1.8]
     HEADERS = ["⭐","ID","ブランド","モデル","カラー","店舗","下代","上代(税込)","フラグ","年","月","メモ"]
     h = st.columns(COL_W)
     for col, label in zip(h, HEADERS):
@@ -174,8 +188,13 @@ def render(df: pd.DataFrame):
         # ⭐
         c[0].write("⭐" if is_fav else "")
 
-        # 基本情報
-        c[1].write(str(row.get("ID", "")))
+        # 基本情報（IDは小数なし整数表示）
+        raw_id = row.get("ID", "")
+        try:
+            display_id = str(int(float(raw_id)))
+        except Exception:
+            display_id = str(raw_id)
+        c[1].write(display_id)
         c[2].write(brand)
         c[3].write(str(row.get("モデル", "")))
         c[4].write(str(row.get("カラー", "")))
