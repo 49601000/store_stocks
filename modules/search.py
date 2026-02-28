@@ -1,9 +1,9 @@
 """
-search.py  v4
+search.py  v5
 在庫検索 & フラグ更新タブ
 
-追加:
-  - モデル名クリック → st.dialog モーダルで全カラム詳細表示
+列順: ⭐|ID|ブランド|モデル|カラー|店舗|下代|上代|フラグ|年|月|メモ|📋
+📋は一番右の独立した小列。モデル名は純粋なテキスト。
 """
 
 import streamlit as st
@@ -56,26 +56,6 @@ div[data-testid="stHorizontalBlock"] div[data-baseweb="select"] {
 div[data-testid="stHorizontalBlock"] input {
     font-size: 0.78rem !important;
 }
-
-/* 詳細ボタンをリンク風に */
-.detail-btn > button {
-    background: none !important;
-    border: none !important;
-    padding: 0 !important;
-    color: #1a73e8 !important;
-    font-size: 0.78rem !important;
-    text-decoration: underline !important;
-    cursor: pointer !important;
-    text-align: left !important;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-}
-.detail-btn > button:hover {
-    color: #0d47a1 !important;
-    background: none !important;
-}
 </style>
 """
 
@@ -88,29 +68,25 @@ def _show_detail(row: pd.Series):
     brand = str(row.get("ブランド", ""))
     model = str(row.get("モデル", ""))
 
-    # タイトル部
-    flag_color = {"〇":"#c8a96e","△":"#6ea8c8","▲":"#a06ec8","×":"#999"}
+    flag_color = {"〇":"#c8a96e","△":"#6ea8c8","▲":"#a06ec8","×":"#888"}
     fc = flag_color.get(flag, "#4CAF50")
+
     raw_id = row.get("ID", "")
     try:
         display_id = str(int(float(raw_id)))
     except Exception:
         display_id = str(raw_id)
 
-    st.markdown(
-        f"### {brand}　{model}",
-        help=f"ID: {display_id}"
-    )
+    st.markdown(f"### {brand}　{model}　　`ID: {display_id}`")
     if flag:
         st.markdown(
-            f'<span style="background:{fc};color:#fff;padding:3px 12px;'
+            f'<span style="background:{fc};color:#fff;padding:3px 14px;'
             f'border-radius:4px;font-weight:bold;">'
             f'{FLAG_LABELS_DISPLAY.get(flag, flag)}</span>',
             unsafe_allow_html=True
         )
     st.divider()
 
-    # ── 全カラムをグループ別に表示 ──────────────
     def clean(val):
         s = str(val)
         return "―" if s in ["", "nan", "None", "NaN"] else s
@@ -123,20 +99,19 @@ def _show_detail(row: pd.Series):
 
     # 基本情報
     st.markdown("#### 基本情報")
-    r1c1, r1c2, r1c3, r1c4 = st.columns(4)
-    r1c1.metric("ID",     display_id)
-    r1c2.metric("ブランド", clean(row.get("ブランド","")))
-    r1c3.metric("モデル",  clean(row.get("モデル","")))
-    r1c4.metric("カラー",  clean(row.get("カラー","")))
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric("ID",      display_id)
+    r2.metric("ブランド", clean(row.get("ブランド","")))
+    r3.metric("モデル",   clean(row.get("モデル","")))
+    r4.metric("カラー",   clean(row.get("カラー","")))
 
     # 価格情報
     st.markdown("#### 価格情報")
     p1, p2, p3 = st.columns(3)
     p1.metric("上代（税込）", price(row.get("上代（税込）","")))
     p2.metric("下代",        price(row.get("下代","")))
-    # 税抜き計算（上代が取れる場合）
     try:
-        tax_excl = int(int(float(row.get("上代（税込）",0))) / 1.1)
+        tax_excl = int(int(float(row.get("上代（税込）", 0))) / 1.1)
         p3.metric("上代（税抜）", f"¥{tax_excl:,}")
     except Exception:
         p3.metric("上代（税抜）", "―")
@@ -157,26 +132,25 @@ def _show_detail(row: pd.Series):
     m2.metric("移動先", clean(row.get("移動先","")))
     m3.metric("移動日", clean(row.get("移動日","")))
 
-    # 備考・その他（残り全カラムを表示）
-    known_cols = {
-        "ID","ブランド","モデル","カラー","上代（税込）","下代",
-        "店舗","売上フラグ","売上年","売上月","入荷年月日",
-        "移動元","移動先","移動日","備考"
-    }
-    extra_cols = [c for c in row.index if c not in known_cols]
-
+    # 備考
     memo = clean(row.get("備考",""))
     if memo != "―":
         st.markdown("#### メモ・備考")
         st.info(memo)
 
-    if extra_cols:
+    # その他（定義済み以外の全カラム）
+    known_cols = {
+        "ID","ブランド","モデル","カラー","上代（税込）","下代",
+        "店舗","売上フラグ","売上年","売上月","入荷年月日",
+        "移動元","移動先","移動日","備考"
+    }
+    extra = {c: clean(row.get(c,"")) for c in row.index
+             if c not in known_cols and clean(row.get(c,"")) != "―"}
+    if extra:
         st.markdown("#### その他項目")
-        ex_vals = {c: clean(row.get(c,"")) for c in extra_cols if clean(row.get(c,"")) != "―"}
-        if ex_vals:
-            ecols = st.columns(min(len(ex_vals), 4))
-            for i, (k, v) in enumerate(ex_vals.items()):
-                ecols[i % 4].metric(k, v)
+        ecols = st.columns(min(len(extra), 4))
+        for i, (k, v) in enumerate(extra.items()):
+            ecols[i % 4].metric(k, v)
 
     st.divider()
     if st.button("✕ 閉じる", use_container_width=True):
@@ -258,8 +232,11 @@ def render(df: pd.DataFrame):
     st.divider()
 
     # ── ヘッダー行 ───────────────────────────
-    COL_W   = [0.35, 0.6, 1.3, 2.0, 1.0, 0.65, 0.85, 0.95, 1.4, 0.9, 0.65, 1.8]
-    HEADERS = ["⭐","ID","ブランド","モデル","カラー","店舗","下代","上代(税込)","フラグ","年","月","メモ"]
+    # 列順: ⭐|ID|ブランド|モデル|カラー|店舗|下代|上代|フラグ|年|月|メモ|📋
+    #  idx:  0   1    2      3     4     5    6    7    8    9  10   11  12
+    COL_W   = [0.35, 0.6, 1.3, 2.0, 1.0, 0.65, 0.85, 0.95, 1.4, 0.9, 0.65, 1.8, 0.4]
+    HEADERS = ["⭐", "ID", "ブランド", "モデル", "カラー", "店舗",
+               "下代", "上代(税込)", "フラグ", "年", "月", "メモ", ""]
     h = st.columns(COL_W)
     for col, label in zip(h, HEADERS):
         col.markdown(f"**{label}**")
@@ -286,10 +263,10 @@ def render(df: pd.DataFrame):
         st.markdown(f'<div class="{row_class}">', unsafe_allow_html=True)
         c = st.columns(COL_W)
 
-        # ⭐
+        # 0: ⭐
         c[0].write("⭐" if is_fav else "")
 
-        # ID（整数表示）
+        # 1: ID（整数表示）
         raw_id = row.get("ID", "")
         try:
             display_id = str(int(float(raw_id)))
@@ -297,26 +274,25 @@ def render(df: pd.DataFrame):
             display_id = str(raw_id)
         c[1].write(display_id)
 
-        # ブランド
+        # 2: ブランド
         c[2].write(brand)
 
-        # モデル名：リンク風ボタン → クリックで詳細モーダル
-        with c[3]:
-            st.markdown('<div class="detail-btn">', unsafe_allow_html=True)
-            if st.button(
-                model if model not in ["", "nan"] else "（未設定）",
-                key=f"detail_{row_idx}",
-                help="クリックで詳細表示",
-            ):
-                _show_detail(row)
-            st.markdown("</div>", unsafe_allow_html=True)
+        # 3: モデル名（純粋なテキスト）
+        c[3].write(model if model not in ["", "nan"] else "―")
 
+        # 4: カラー
         c[4].write(str(row.get("カラー", "")))
+
+        # 5: 店舗
         c[5].write(str(row.get("店舗", "")))
+
+        # 6: 下代
         c[6].write(fmt_price(row.get("下代", "")))
+
+        # 7: 上代（税込）
         c[7].write(fmt_price(row.get("上代（税込）", "")))
 
-        # フラグ プルダウン
+        # 8: フラグ プルダウン
         cur_flag_idx = FLAG_OPTIONS.index(flag) if flag in FLAG_OPTIONS else 0
         sel_flag = c[8].selectbox(
             "フラグ",
@@ -329,7 +305,7 @@ def render(df: pd.DataFrame):
         if sel_flag != flag:
             _apply_flag(df, row_idx, sel_flag, row)
 
-        # 年・月
+        # 9: 年  / 10: 月
         cur_year  = row.get("売上年",  "")
         cur_month = row.get("売上月", "")
         try:
@@ -344,15 +320,17 @@ def render(df: pd.DataFrame):
         sel_year  = c[9].selectbox("年",  years,  index=yi, key=f"yr_{row_idx}",  label_visibility="collapsed")
         sel_month = c[10].selectbox("月", months, index=mi, key=f"mo_{row_idx}", label_visibility="collapsed")
 
-        if sel_flag == "〇" and (sel_year != cur_year or sel_month != cur_month):
+        if sel_flag == "〇" and (int(sel_year) != int(float(cur_year or 0))
+                                  or int(sel_month) != int(float(cur_month or 0))):
             if c[9].button("↑保存", key=f"ymupd_{row_idx}", help="年月を更新"):
                 updated = D.update_flag(df.copy(), row_idx, "〇", year=sel_year, month=sel_month)
                 D.save(updated)
                 st.success(f"ID {display_id} 年月を {sel_year}/{sel_month} に更新しました")
                 st.rerun()
 
-        # メモ欄
-        cur_memo = str(row.get("備考", "")) if str(row.get("備考", "")) not in ["nan", "None"] else ""
+        # 11: メモ（備考列）
+        cur_memo = str(row.get("備考", ""))
+        cur_memo = "" if cur_memo in ["nan", "None", "NaN"] else cur_memo
         new_memo = c[11].text_input(
             "メモ", value=cur_memo, key=f"memo_{row_idx}",
             label_visibility="collapsed", placeholder="メモ...",
@@ -363,11 +341,15 @@ def render(df: pd.DataFrame):
             D.save(updated)
             st.rerun()
 
+        # 12: 📋 詳細ボタン（一番右）
+        if c[12].button("📋", key=f"detail_{row_idx}", help="詳細を表示"):
+            _show_detail(row)
+
         st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
-#  フラグ適用
+#  フラグ適用（即時保存）
 # ─────────────────────────────────────────────
 def _apply_flag(df: pd.DataFrame, idx: int, flag: str, row):
     updated = D.update_flag(df.copy(), idx, flag)
