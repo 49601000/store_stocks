@@ -1,7 +1,13 @@
 """
-data.py
-GSheets 接続・読み書き・キャッシュを一元管理するデータレイヤー。
-他のモジュールはすべてここの関数を使う。
+data.py  v2
+GSheets 接続・読み書き・キャッシュ管理
+
+キャッシュ戦略:
+  - df本体は st.session_state["_df_cache"] に保持
+  - 検索・表示はすべてsession_stateから読む（API不使用）
+  - 保存時はAPIに書くが session_state も即更新（再取得しない）
+  - TTLは600秒（10分）。手動更新ボタンで任意リフレッシュ可能
+  - アプリ起動時の初回のみAPIを叩く
 """
 
 import streamlit as st
@@ -16,39 +22,74 @@ FLAG_LABELS = {
     "〇": "売上済み",
     "△": "スタッフ用",
     "▲": "返品",
-    "×": "破棄",
+    "×": "除外",
     "":  "在庫あり",
 }
-
 STORES = ["ニコメ", "マトイ"]
 
+_CACHE_KEY    = "_df_cache"       # session_state キー
+_TTL_SECONDS  = 600               # 自動リフレッシュ間隔（秒）
+
 # ─────────────────────────────────────────────
-#  接続
+#  接続（アプリ全体で1インスタンス）
 # ─────────────────────────────────────────────
 @st.cache_resource
 def get_conn():
     return st.connection("gsheets", type=GSheetsConnection)
 
 # ─────────────────────────────────────────────
-#  読み込み
+#  APIからの生読み込み（内部用・直接呼ばない）
 # ─────────────────────────────────────────────
-@st.cache_data(ttl=60)
-def load() -> pd.DataFrame:
+@st.cache_data(ttl=_TTL_SECONDS, show_spinner="スプレッドシートを読み込み中...")
+def _fetch_from_api() -> pd.DataFrame:
+    """TTLキャッシュ付きAPI取得。TTL内は何度呼ばれてもAPIを叩かない。"""
     conn = get_conn()
-    df = conn.read(usecols=list(range(15)), ttl=60)
+    df = conn.read(usecols=list(range(15)), ttl=_TTL_SECONDS)
     df.columns = df.columns.str.strip()
     if "売上フラグ" in df.columns:
         df["売上フラグ"] = df["売上フラグ"].fillna("").astype(str).str.strip()
     return df
 
 # ─────────────────────────────────────────────
-#  書き込み
+#  公開：データ読み込み
+# ─────────────────────────────────────────────
+def load() -> pd.DataFrame:
+    """
+    session_stateにキャッシュがあればそちらを返す。
+    なければAPIから取得してsession_stateに保存。
+    → 検索・表示操作では一切APIを叩かない。
+    """
+    if _CACHE_KEY not in st.session_state:
+        st.session_state[_CACHE_KEY] = _fetch_from_api().copy()
+    return st.session_state[_CACHE_KEY]
+
+# ─────────────────────────────────────────────
+#  公開：強制リフレッシュ（手動更新ボタン用）
+# ─────────────────────────────────────────────
+def force_reload() -> pd.DataFrame:
+    """
+    TTLキャッシュを破棄してAPIから再取得。
+    フッターの「再読み込み」ボタンから呼ぶ。
+    """
+    st.cache_data.clear()
+    if _CACHE_KEY in st.session_state:
+        del st.session_state[_CACHE_KEY]
+    df = _fetch_from_api().copy()
+    st.session_state[_CACHE_KEY] = df
+    return df
+
+# ─────────────────────────────────────────────
+#  公開：書き込み
 # ─────────────────────────────────────────────
 def save(df: pd.DataFrame):
-    """スプレッドシート全体を上書きしてキャッシュをクリア"""
+    """
+    APIに書き込み後、session_stateを即更新。
+    TTLキャッシュは破棄しない → 次のload()はsession_stateから高速返却。
+    """
     conn = get_conn()
     conn.update(data=df)
-    st.cache_data.clear()
+    # session_stateを新データで上書き（API再取得なし）
+    st.session_state[_CACHE_KEY] = df.copy()
 
 # ─────────────────────────────────────────────
 #  ヘルパー：フラグ更新
